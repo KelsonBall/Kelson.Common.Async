@@ -2,6 +2,16 @@
 
   <PropertyGroup>
     <TargetFramework>netstandard2.0</TargetFramework>
+    <PackageProjectUrl>https://github.com/KelsonBall/Kelson.Common.Async</PackageProjectUrl>
+    <PackageIconUrl>https://avatars2.githubusercontent.com/u/7193540</PackageIconUrl>
+    <RepositoryUrl>https://github.com/KelsonBall/Kelson.Common.Async</RepositoryUrl>
+    <Description>Types and extensions for asynchronous programming</Description>
+    <Company>Kelson Software</Company>
+    <Authors>Kelson Ball</Authors>
+    <Version>0.1.0</Version>
+    <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
+    <PackageLicenseUrl>https://opensource.org/licenses/MIT</PackageLicenseUrl>
+    <PackageTags>async</PackageTags>
   </PropertyGroup>
 
 </Project>
