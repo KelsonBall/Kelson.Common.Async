@@ -15,7 +15,7 @@ namespace Kelson.Common.Async
 
         /// <summary>
         /// Register an action with wich to dispatch actions to specific threads
-        /// </summary>        
+        /// </summary>
         public static void RegisterCallbackDispatcher(Action<Action> callback, int dispatcherHandle = 0)
         {
             CallbackDispatcher[dispatcherHandle] = callback;
@@ -25,7 +25,7 @@ namespace Kelson.Common.Async
 
         /// <summary>
         /// Register a callback to be called when an exception is thrown by a piped task
-        /// </summary>        
+        /// </summary>
         public static void RegisterExceptionLogger(Action<Exception> handler)
         {
             ExceptionLogger += handler;
@@ -33,7 +33,7 @@ namespace Kelson.Common.Async
 
         /// <summary>
         /// Run the action on another thread, specified by the dispatchHandle
-        /// </summary>        
+        /// </summary>
         public static void Dispatch(Action action, int dispatcherHandle = 0)
         {
             if (CallbackDispatcher.TryGetValue(dispatcherHandle, out Action<Action> handler))
@@ -44,7 +44,7 @@ namespace Kelson.Common.Async
 
         /// <summary>
         /// When the task completes, dispatches its result through the action
-        /// </summary>        
+        /// </summary>
         public static void Then<T>(this Task<T> task, Action<T> action, int dispatcherHandle = 0, [CallerMemberName] string callerName = null)
         {
             task.ContinueWith(
@@ -65,7 +65,7 @@ namespace Kelson.Common.Async
 
         /// <summary>
         /// When teh task finishes, dispatch the action
-        /// </summary>        
+        /// </summary>
         public static void Then(this Task task, Action action, int dispatchHandle = 0, [CallerMemberName] string callerName = null)
         {
             task.ContinueWith(
