@@ -8,10 +8,10 @@
     <Description>Types and extensions for asynchronous programming</Description>
     <Company>Kelson Software</Company>
     <Authors>Kelson Ball</Authors>
-    <Version>0.1.1</Version>
+    <Version>0.2.0</Version>
     <GeneratePackageOnBuild>true</GeneratePackageOnBuild>
     <PackageLicenseUrl>https://opensource.org/licenses/MIT</PackageLicenseUrl>
-    <PackageTags>async</PackageTags>
+    <PackageTags>async, dispatch</PackageTags>
   </PropertyGroup>
 
 </Project>

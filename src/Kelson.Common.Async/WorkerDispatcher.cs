@@ -18,12 +18,12 @@ namespace Kelson.Common.Async
             public StackTrace Trace { get; set; }
         }
 
-        private readonly Thread Channel;
+        private readonly Thread[] Channels;
 
         private readonly ConcurrentQueue<Message> queue = new ConcurrentQueue<Message>();
 
         private readonly object faultLock = new object();
-        private readonly Queue<DispatcherException> faults = new Queue<DispatcherException>();
+        private readonly Queue<DispatcherException> faults;
 
         public IEnumerable<DispatcherException> Faults
         {
@@ -40,22 +40,31 @@ namespace Kelson.Common.Async
 
         public bool Running { get; private set; } = false;
 
-        public bool Alive { get; private set; } = false;
+        public bool[] Alive { get; private set; }
 
         private readonly Action<Exception> onException;
         private readonly Action onDispatch;
 
         private readonly int pollingDelay;
-        
-        public WorkerDispatcher(Action<Exception> onException, Action onDispatch = null, ThreadPriority priority = ThreadPriority.Normal)
+        private readonly int faultBufferSize;
+
+        public WorkerDispatcher(Action<Exception> onException, Action onDispatch = null, ThreadPriority priority = ThreadPriority.Normal, int threadCount = 1, int faultBufferSize = 10)
         {
             this.onException = onException;
             this.onDispatch = onDispatch ?? (() => { });
-            Channel = new Thread(() => WatchQueue().Wait())
-            {
-                Priority = priority,
-                Name = "Worker Dispatcher",
-            };
+            this.faultBufferSize = faultBufferSize;
+            faults = new Queue<DispatcherException>(faultBufferSize);
+            Channels =
+                Enumerable.Range(0, threadCount)
+                    .Select(id =>
+                        new Thread(() => WatchQueue(id).Wait())
+                        {
+                            Priority = priority,
+                            Name = "Worker Dispatcher",
+                        })
+                    .ToArray();
+
+            Alive = Channels.Select(c => false).ToArray();
 
             switch (priority)
             {
@@ -76,7 +85,8 @@ namespace Kelson.Common.Async
                     break;
             }
             
-            Channel.Start();
+            foreach (var channel in Channels)
+                channel.Start();
         }
 
         public void Stop()
@@ -87,14 +97,16 @@ namespace Kelson.Common.Async
         public void Abort()
         {
             Running = false;
-            Alive = false;
-            Channel.Abort();
+            for (int i = 0; i < Alive.Length; i++)
+                Alive[i] = false;
+            foreach (var channel in Channels)
+                channel.Abort();
         }
 
-        private async Task WatchQueue()
+        private async Task WatchQueue(int id)
         {
             Running = true;
-            Alive = true;
+            Alive[id] = true;
             while (Running)
             {
                 if (queue.TryDequeue(out Message message))
@@ -107,21 +119,29 @@ namespace Kelson.Common.Async
                     catch (Exception e)
                     {
                         var exception = new DispatcherException(message.Dispatchee, message.Trace, e);
-                        lock(faultLock)
-                        {
-                            faults.Enqueue(exception);
-                        }
+                        EnqueueException(exception);
                         onException(e);
                     }
                 }
                 else
                     await Task.Delay(pollingDelay);
             }
-            Alive = false;
+            Alive[id] = false;
         }
 
-        public void Dispatch(Action action, StackTrace trace, [CallerMemberName] string dispatchee = null)
-        {            
+        private void EnqueueException(DispatcherException exception)
+        {
+            lock (faultLock)
+            {
+                if (faults.Count >= faultBufferSize)
+                    faults.Dequeue();
+                faults.Enqueue(exception);                
+            }
+        }
+
+        public void Dispatch(Action action, StackTrace trace = null, [CallerMemberName] string dispatchee = null)
+        {
+            trace = trace ?? new StackTrace(1);
             queue.Enqueue(new Message
             {
                 Action = action,
