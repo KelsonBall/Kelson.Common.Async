@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Threading.Tasks;
 
@@ -11,14 +12,14 @@ namespace Kelson.Common.Async
     /// </summary>
     public static class StaticDispatch
     {
-        private static readonly ConcurrentDictionary<int, Action<Action>> CallbackDispatcher = new ConcurrentDictionary<int, Action<Action>>();
+        private static readonly ConcurrentDictionary<int, IDispatcher> CallbackDispatcher = new ConcurrentDictionary<int, IDispatcher>();
 
         /// <summary>
         /// Register an action with wich to dispatch actions to specific threads
         /// </summary>        
         public static void RegisterCallbackDispatcher(Action<Action> callback, int dispatcherHandle = 0)
         {
-            CallbackDispatcher[dispatcherHandle] = callback;
+            CallbackDispatcher[dispatcherHandle] = new ActionDispatcher(callback, e => ExceptionLogger?.Invoke(e));
         }
 
         private static Action<Exception> ExceptionLogger;
@@ -34,10 +35,11 @@ namespace Kelson.Common.Async
         /// <summary>
         /// Run the action on another thread, specified by the dispatchHandle
         /// </summary>        
-        public static void Dispatch(Action action, int dispatcherHandle = 0)
+        public static void Dispatch(Action action, int dispatcherHandle = 0, [CallerMemberName] string dispatchee = null)
         {
-            if (CallbackDispatcher.TryGetValue(dispatcherHandle, out Action<Action> handler))
-                handler(action);
+            var trace = new StackTrace(1);
+            if (CallbackDispatcher.TryGetValue(dispatcherHandle, out IDispatcher dispatcher))
+                dispatcher.Dispatch(action, trace, dispatchee);
             else
                 throw new KeyNotFoundException($"Could not find a registered callback dispatcher with handle {dispatcherHandle}, use {nameof(StaticDispatch)}.{nameof(RegisterCallbackDispatcher)} to register dispatchers.");
         }
@@ -47,6 +49,7 @@ namespace Kelson.Common.Async
         /// </summary>        
         public static void Then<T>(this Task<T> task, Action<T> action, int dispatcherHandle = 0, [CallerMemberName] string callerName = null)
         {
+            var trace = new StackTrace(1);
             task.ContinueWith(
                 t => Dispatch(() =>
                 {
@@ -58,16 +61,26 @@ namespace Kelson.Common.Async
                     catch (Exception e)
                     {
                         ExceptionLogger?.Invoke(e);
-                        throw e;
+                        throw new DispatcherException(callerName, trace, e);
                     }
                 }, dispatcherHandle));
         }
 
         /// <summary>
-        /// When teh task finishes, dispatch the action
+        /// When the task completes, dispatches its result through the action
+        /// </summary>        
+        public static void ThenOn<T>(this Task<T> task, IDispatcher dispatcher, Action<T> action, [CallerMemberName] string callerName = null)
+        {
+            var trace = new StackTrace(1);
+            task.ContinueWith(t => dispatcher.Dispatch(() => action(t.Result), trace, callerName));
+        }
+
+        /// <summary>
+        /// When the task finishes, dispatch the action
         /// </summary>        
         public static void Then(this Task task, Action action, int dispatchHandle = 0, [CallerMemberName] string callerName = null)
         {
+            var trace = new StackTrace(1);
             task.ContinueWith(
                 t => Dispatch(() => {
                     try
@@ -77,9 +90,18 @@ namespace Kelson.Common.Async
                     catch (Exception e)
                     {
                         ExceptionLogger?.Invoke(e);
-                        throw e;
+                        throw new DispatcherException(callerName, trace, e);
                     }
                 }, dispatchHandle));
+        }
+
+        /// <summary>
+        /// When the task finishes, dispatch the action
+        /// </summary>        
+        public static void ThenOn(this Task task, IDispatcher dispatcher, Action action, [CallerMemberName] string callerName = null)
+        {
+            var trace = new StackTrace();
+            task.ContinueWith(t => dispatcher.Dispatch(action, trace, callerName));
         }
 
         /// <summary>
@@ -128,6 +150,43 @@ namespace Kelson.Common.Async
                 else if (t.IsCanceled)
                     cancelCallback?.Invoke();
             }, dispatchHandle));
+        }
+
+        public static void ConfirmOn<T>(this Task<T> task, IDispatcher dispatcher, Action<T> successCallback = null, Action<Exception> errorCallback = null, Action cancelCallback = null, [CallerMemberName] string callerName = null)
+        {
+            var trace = new StackTrace(1);
+            task.ContinueWith(t => 
+                dispatcher.Dispatch(() =>
+                {
+                    if (t.IsFaulted)
+                    {
+                        if (errorCallback != null)
+                            errorCallback?.Invoke(t.Exception);
+                        else
+                            throw t.Exception;
+                    }
+                    if (t.IsCompleted)
+                        successCallback?.Invoke(t.Result);
+                    else if (t.IsCanceled)
+                        cancelCallback?.Invoke();
+                }, trace, callerName));
+        }
+    }
+
+    public class DispatcherException : Exception
+    {
+        public readonly StackFrame[] DispatcherStack;
+        public readonly StackFrame[] ExceptionStack;
+
+        public DispatcherException(string dispatchee, Exception exception) : base($"Dispatchee {dispatchee} encountered an exception", exception)
+        {
+            ExceptionStack = new StackTrace(exception).GetFrames();
+        }
+
+        public DispatcherException(string dispatchee, StackTrace trace, Exception exception) : base($"Dispatchee {dispatchee} encountered an exception", exception)
+        {
+            DispatcherStack = trace.GetFrames();
+            ExceptionStack = new StackTrace(exception).GetFrames();
         }
     }
 }
