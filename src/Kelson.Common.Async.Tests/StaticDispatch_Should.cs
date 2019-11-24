@@ -108,6 +108,9 @@ namespace Kelson.Common.Async.Tests
 
             //dispatch.Should().Throw<KeyNotFoundException>();
             //set.Should().BeFalse();
+            throw new HelpWantedException();
         }
+
+        class HelpWantedException : Exception {}
     }
 }
