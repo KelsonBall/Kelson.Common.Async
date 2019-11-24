@@ -1,6 +1,6 @@
 # Kelson.Common.Async
 
-This package is for enabling easy and fluent use of the concurrency APIs available in dotnet.
+This package is for enabling fluent use of the concurrency APIs available in dotnet.
 
 ## Docs
 
